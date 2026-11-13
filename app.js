@@ -1394,15 +1394,26 @@ function metroClick(t, down) {
   o.connect(g); g.connect(metro.out);
   o.start(t); o.stop(t + 0.06);
   const ms = Math.max(0, (t - actx.currentTime) * 1000), tab = $('#tabMetro');
-  setTimeout(() => { if (!metro.on) return; tab.classList.add('beat'); tab.classList.toggle('down', down);
+  const h = setTimeout(() => { if (!metro.on) return; tab.classList.add('beat'); tab.classList.toggle('down', down);
     setTimeout(() => tab.classList.remove('beat', 'down'), 110); }, ms);
+  metro.queued = (metro.queued || []).filter(q => q.t > actx.currentTime);
+  metro.queued.push({ t, g, h });
+}
+function metroFlush() { // huỷ các tiếng gõ đã xếp lịch nhưng chưa kêu (khi đổi chế độ / tua / tắt)
+  if (actx && metro.queued) metro.queued.forEach(q => { if (q.t > actx.currentTime) { q.g.disconnect(); clearTimeout(q.h); } });
+  metro.queued = [];
 }
 function metroTick() {
   if (!metro.on || !actx || actx.state !== 'running') return;
   const now = actx.currentTime, hor = now + 0.15, M = Math.max(1, metro.meter);
-  if (P.playing && P.mode === 'auto' && P.parsed) {
+  const want = P.playing && P.mode === 'auto' && P.parsed ? 'song' : 'free';
+  if (metro.mode && metro.mode !== want) { metroFlush(); metro.mode = ''; }
+  if (want === 'song') {
     const b = bps(), cur = (now - P.t0) * b;
-    if (metro.mode !== 'song' || metro.lastK > cur + 1) metro.lastK = Math.ceil(cur - 0.02) - 1; // mới vào / vừa tua lùi
+    // mới vào / vừa tua / đổi tốc độ (P.t0 hoặc tốc độ đổi) -> xếp lịch lại từ phách hiện tại
+    if (metro.mode !== 'song' || metro.t0 !== P.t0 || metro.b !== b) {
+      metroFlush(); metro.lastK = Math.ceil(cur - 0.02) - 1; metro.t0 = P.t0; metro.b = b;
+    }
     metro.mode = 'song';
     for (let k = Math.max(metro.lastK + 1, Math.ceil(cur - 0.02)); ; k++) {
       const t = P.t0 + k / b;
@@ -1421,13 +1432,14 @@ function setMetro(on) {
   $('#tabMetro').classList.toggle('on', on);
   $('#tabMetro').setAttribute('aria-pressed', String(on));
   clearInterval(metro.timer);
+  metroFlush();
   metro.mode = '';
   if (on) { ensureAudio(); metro.timer = setInterval(metroTick, 25); metroTick(); }
 }
 $('#tabMetro').addEventListener('click', () => setMetro(!metro.on));
 $('#metroBpm').addEventListener('input', e => {
   metro.bpm = clamp(+e.target.value || 80, 30, 240); $('#metroBpmOut').textContent = metro.bpm;
-  if (metro.mode === 'free') metro.mode = ''; // áp tốc độ mới ngay
+  if (metro.mode === 'free') { metroFlush(); metro.mode = ''; } // áp tốc độ mới ngay
   savePrefs();
 });
 $('#metroMeter').addEventListener('change', e => { metro.meter = +e.target.value || 4; metro.k = 0; savePrefs(); });
