@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1c2230">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Piano Việt">
+<title>Piano Việt</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="bar">
+  <div class="brand"><span class="logo">🎹</span><span class="brand-text">PIANO <b>VIỆT</b></span></div>
+
+  <label class="vol" title="Âm lượng"><input type="range" id="volume" min="0" max="1" step="0.01" value="0.8"></label>
+
+  <div class="inst" title="Tiếng đàn">
+    <div class="inst-list">
+      <div id="instPrevName" class="dim"></div>
+      <div id="instName" class="cur"></div>
+      <div id="instNextName" class="dim"></div>
+    </div>
+    <div class="inst-btns">
+      <button id="instPrev" aria-label="Tiếng đàn trước">︿</button>
+      <button id="instNext" aria-label="Tiếng đàn sau">﹀</button>
+    </div>
+  </div>
+
+  <nav class="tabs">
+    <button class="tab" id="tabSongs"><span class="ic">🎼</span>BÀI HÁT</button>
+    <button class="tab on" id="tabSustain" aria-pressed="true"><span class="ic">〰️</span>SUSTAIN</button>
+    <button class="tab" id="tabNotepad"><span class="ic">📝</span>THÊM BÀI</button>
+    <button class="tab" id="tabSettings"><span class="ic">⚙️</span>CÀI ĐẶT</button>
+  </nav>
+</header>
+
+<div class="transport">
+  <div class="np">
+    <div id="npTitle" class="np-title">Chưa chọn bài — bấm BÀI HÁT</div>
+    <div id="npSub" class="np-sub">Chơi bằng chuột, cảm ứng hoặc bàn phím máy tính.</div>
+  </div>
+  <div class="tctl">
+    <select id="mode" title="Chế độ">
+      <option value="auto">Tự chơi</option>
+      <option value="follow">Chơi theo</option>
+    </select>
+    <button id="btnPlay" class="primary" disabled>▶ Phát</button>
+    <button id="btnStop" disabled>■</button>
+    <button id="btnEasy" disabled title="Bản dễ 2 tay: tay phải 1 nốt giai điệu, tay trái 1 nốt gốc mỗi hợp âm">🪄<span class="lt"> Bản dễ</span></button>
+    <button id="btnEasy1" disabled title="Chỉ giai điệu tay phải (1 nốt), ít phím đen">🎵<span class="lt"> Chỉ giai điệu</span></button>
+    <input type="range" id="seek" min="0" max="1000" value="0" disabled>
+    <span id="timeOut">0:00 / 0:00</span>
+    <div id="sliders" class="sliders">
+      <label title="Tốc độ">Tốc độ <input type="range" id="speed" min="0.25" max="2" step="0.05" value="1"> <output id="speedOut">1.00×</output></label>
+      <label title="Cao độ (chuyển giọng)">Cao độ <input type="range" id="trans" min="-12" max="12" step="1" value="0"> <output id="transOut">0</output></label>
+    </div>
+  </div>
+  <div id="status" class="status" aria-live="polite"></div>
+</div>
+
+<div id="scroller" class="scroller">
+  <div id="stage" class="stage">
+    <canvas id="fall"></canvas>
+    <div id="kb" class="kb"></div>
+  </div>
+</div>
+
+<button id="fabL" class="fab left" aria-label="Cuộn đàn sang trái">◀</button>
+<button id="fabR" class="fab right" aria-label="Cuộn đàn sang phải">▶</button>
+
+<aside id="panelSongs" class="panel left" hidden>
+  <div class="panel-head"><h2>Bài hát</h2><button class="x" data-close="panelSongs" aria-label="Đóng">✕</button></div>
+  <div class="side-actions">
+    <button id="btnAdd" class="primary">＋ Thêm bài</button>
+    <button id="btnMidi" title="Nhập bài từ file .mid (hỗ trợ nhạc hai tay)">Nhập MIDI</button>
+    <input type="file" id="midiInput" accept=".mid,.midi,audio/midi,audio/x-midi" hidden>
+    <button id="btnImport">Nhập JSON</button>
+    <button id="btnExport">Xuất JSON</button>
+    <input type="file" id="fileInput" accept=".json,application/json" hidden>
+    <button id="btnAdmin" hidden title="Mở các bài riêng tư (cần mật khẩu)">🔒 Admin</button>
+  </div>
+  <div id="songList"></div>
+  <p class="note">Bài tự thêm được lưu trong trình duyệt này. Hãy dùng <b>Xuất JSON</b> để sao lưu — khi xóa dữ liệu duyệt web hoặc đổi trình duyệt, bài sẽ mất.</p>
+</aside>
+
+<aside id="panelSettings" class="panel right" hidden>
+  <div class="panel-head"><h2>Cài đặt</h2><button class="x" data-close="panelSettings" aria-label="Đóng">✕</button></div>
+  <label class="field">Tiếng đàn
+    <select id="instrument"></select>
+  </label>
+  <div class="field sliders-home" id="slidersHome"></div>
+  <label class="field">Cỡ đàn
+    <select id="fitMode">
+      <option value="fit">Vừa màn hình, không cuộn (Cả đàn: 88 phím · Hai tay / Gọn: phóng to quãng phím gõ được)</option>
+      <option value="big">Phím to (phải cuộn qua lại)</option>
+    </select>
+  </label>
+  <label class="field">Tự cuộn đàn theo bài
+    <select id="autoScroll">
+      <option value="on">Bật (đàn tự trượt tới các phím sắp phải bấm)</option>
+      <option value="off">Tắt</option>
+    </select>
+  </label>
+  <label class="field">Tên nốt trên phím
+    <select id="labelMode">
+      <option value="en">C D E</option>
+      <option value="vi">Đô Rê Mi</option>
+      <option value="none">Ẩn</option>
+    </select>
+  </label>
+  <label class="field">Chữ cái chạy trong nốt rơi
+    <select id="letterMode">
+      <option value="auto">Tự động (có trên laptop, không có trên điện thoại)</option>
+      <option value="on">Luôn hiện</option>
+      <option value="off">Tắt</option>
+    </select>
+  </label>
+  <label class="field">Bản dễ (🪄) dùng giọng nào
+    <select id="easyKey">
+      <option value="keep">Giữ nguyên giọng như bản gốc (có phím đen: Bb, C#…)</option>
+      <option value="white">Dịch về phím trắng (dễ đánh hơn, khác giọng gốc)</option>
+    </select>
+  </label>
+  <label class="field">Phím máy tính
+    <select id="kbLayout">
+      <option value="classic">Cả đàn (1–0, Q–P, A–L, Z–M; Shift = nửa cung)</option>
+      <option value="compact">Gọn (2 hàng, đổi quãng tám)</option>
+      <option value="twohand">Hai tay (trái: hàng số + Q, phải: hàng A + Z)</option>
+    </select>
+  </label>
+  <div class="field" id="twoGroup" hidden>
+    <div>Tay trái (hàng Q = phím trắng, hàng số = phím đen): <b id="leftBaseOut"></b>
+      <button id="leftDown" title="Hạ 1 quãng tám">−8</button> <button id="leftUp" title="Lên 1 quãng tám">+8</button></div>
+    <div>Tay phải (hàng Z = phím trắng, hàng A = phím đen): <b id="rightBaseOut"></b>
+      <button id="rightDown" title="Hạ 1 quãng tám">−8</button> <button id="rightUp" title="Lên 1 quãng tám">+8</button></div>
+    <label>Nốt ngoài tầm phím
+      <select id="foldHands">
+        <option value="on">Gập vào tầm hai tay (đổi quãng tám)</option>
+        <option value="off">Giữ nguyên (phải bấm bằng chuột)</option>
+      </select>
+    </label>
+  </div>
+  <div class="field" id="octGroup">Quãng tám phím máy tính
+    <div><button id="octDown" title="Hạ 1 quãng tám">−8</button> <button id="octUp" title="Lên 1 quãng tám">+8</button></div>
+  </div>
+  <div class="field">Cuộn đàn
+    <div><button id="scrollL">◀</button> <button id="scrollR">▶</button></div>
+  </div>
+</aside>
+
+<dialog id="dlg">
+  <form id="songForm" autocomplete="off">
+    <h2 id="dlgTitle">Thêm bài mới</h2>
+    <div class="row">
+      <label>Tên bài <input id="fName" type="text" maxlength="100"></label>
+      <label>Ca sĩ / nguồn <input id="fArtist" type="text" maxlength="100"></label>
+      <label>BPM <input id="fBpm" type="number" min="20" max="300" step="1" placeholder="100"></label>
+    </div>
+    <label>Nốt nhạc
+      <textarea id="fNotes" rows="9" spellcheck="false" placeholder="C4:1 D4 E4 G4:2 | R:1 C5:2"></textarea>
+    </label>
+    <details class="help">
+      <summary>Cách viết nốt</summary>
+      <ul>
+        <li><code>C4</code> <code>C#4</code> <code>Db4</code>: nốt (chữ A–G, <code>#</code> thăng, <code>b</code> giáng, số là quãng tám; C4 = Đô giữa).</li>
+        <li><code>C4:2</code>: kéo dài 2 phách; cũng được <code>:0.5</code> hoặc <code>:1/2</code>. Bỏ trống thì dùng lại độ dài trước (mặc định 1).</li>
+        <li><code>R:1</code> (hoặc <code>-:1</code>): nghỉ 1 phách.</li>
+        <li><code>C4+E4+G4:2</code>: hợp âm (đánh cùng lúc).</li>
+        <li><code>|</code>: vạch nhịp (chỉ để dễ nhìn). <code>// ghi chú</code> hoặc <code># ghi chú</code>.</li>
+        <li>Dòng thông tin (tuỳ chọn): <code>@bpm 100</code>, <code>@name Tên bài</code>, <code>@artist Ca sĩ</code>.</li>
+      </ul>
+    </details>
+    <div id="fErr" class="err" hidden></div>
+    <div class="dlg-actions">
+      <button type="button" id="btnPreview">▶ Nghe thử</button>
+      <span class="spacer"></span>
+      <button type="button" id="btnCancel">Hủy</button>
+      <button type="submit" class="primary">Lưu</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="dlgAdmin" class="small">
+  <form id="adminForm" autocomplete="off">
+    <h2>Mở bài riêng tư</h2>
+    <label>Mật khẩu admin <input id="adminPw" type="password" autocomplete="current-password"></label>
+    <label class="check"><input id="adminRemember" type="checkbox" checked> Ghi nhớ trên máy này</label>
+    <div id="adminErr" class="err" hidden></div>
+    <div class="dlg-actions">
+      <span class="spacer"></span>
+      <button type="button" id="adminCancel">Hủy</button>
+      <button type="submit" class="primary" id="adminOk">Mở</button>
+    </div>
+  </form>
+</dialog>
+
+<div id="toast" class="toast" role="status" hidden></div>
+
+<script src="parser.js"></script>
+<script src="midi.js"></script>
+<script src="easy.js"></script>
+<script src="songs.js"></script>
+<script src="songs.private.js"></script>
+<script src="songs.private.enc.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
