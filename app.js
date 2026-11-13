@@ -49,6 +49,8 @@ function layout() {
   const sc = $('#scroller');
   const w = sc.clientWidth || 1000, h = sc.clientHeight || 600;
   const fit = fitMode === 'fit';
+  // phím trắng đầu tiên đang xem (ghi lại khi người dùng cuộn) -> sau khi đổi cỡ / xoay máy vẫn xem đúng chỗ đó
+  const anchor = viewLockX === null ? scrollAnchor : null;
   sc.style.overflowX = fit ? 'hidden' : 'auto';
   // Bố cục "Hai tay" / "Gọn": chỉ hiện đúng quãng phím gõ được, phóng to vừa màn hình và khóa cuộn.
   // Bố cục "Cả đàn": thu nhỏ để đủ 88 phím.
@@ -59,6 +61,11 @@ function layout() {
     WW = w / whites;                         // các phím trắng vừa khít bề ngang, không cần cuộn
     BW = WW * 0.6;
     KB_H = clamp(Math.round(WW * 6), 96, Math.round(h * 0.4));
+  } else if (/^o[2-5]$/.test(fitMode)) {
+    // số quãng tám cố định: (7 × số quãng + 1) phím trắng vừa khít bề ngang, cuộn để xem phần còn lại
+    WW = w / (7 * +fitMode[1] + 1);
+    BW = WW * 0.6;
+    KB_H = clamp(Math.round(WW * 5.5), h < 520 ? 110 : 150, Math.round(h * (h < 520 ? 0.5 : 0.42)));
   } else {
     WW = clamp(Math.round(w / 22), 38, 64);
     BW = Math.round(WW * 0.6);
@@ -91,7 +98,15 @@ function layout() {
   g.setTransform(dpr, 0, 0, dpr, 0, 0);
   if (keyEls[LO]) updateLabels(); // nhãn phụ thuộc cỡ phím
   viewLockX = fit ? (range ? keyX[range[0]] : 0) : null;
+  layoutW = w;
   if (viewLockX !== null) sc.scrollLeft = viewLockX;
+  else if (anchor !== null) sc.scrollLeft = keyX[anchor];
+}
+let scrollAnchor = null, layoutW = 0;
+function noteScrollAnchor() {
+  const sc = $('#scroller');
+  if (viewLockX !== null || sc.clientWidth !== layoutW) return; // khung vừa đổi cỡ: trình duyệt tự kẹp vị trí, bỏ qua
+  for (let m = LO; m <= HI; m++) if (!isBlack(m) && keyX[m] + WW / 2 >= sc.scrollLeft) { scrollAnchor = m; return; }
 }
 let viewLockX = null; // khác null = vị trí cuộn bị khóa (chế độ vừa màn hình)
 function viewRange() {
@@ -108,6 +123,7 @@ function viewRange() {
 $('#scroller').addEventListener('scroll', () => {
   const sc = $('#scroller');
   if (viewLockX !== null && Math.abs(sc.scrollLeft - viewLockX) > 0.5) sc.scrollLeft = viewLockX;
+  else noteScrollAnchor();
 });
 
 /* ========== Âm thanh (Web Audio, tự tổng hợp tiếng piano) ========== */
@@ -1314,7 +1330,7 @@ function savePrefs() { lsSet(PREF_KEY, { volume, labelMode, instrument, kbLayout
   metroBpm: metro.bpm, metroMeter: metro.meter, metroVol: metro.vol }); }
 $('#easyKey').addEventListener('change', e => { easyKey = e.target.value; savePrefs(); });
 $('#autoScroll').addEventListener('change', e => { autoScroll = e.target.value === 'on'; savePrefs(); });
-$('#fitMode').addEventListener('change', e => { fitMode = e.target.value; savePrefs(); layout(); });
+$('#fitMode').addEventListener('change', e => { fitMode = e.target.value; savePrefs(); layout(); scrollToBase(); });
 
 $('#letterMode').addEventListener('change', e => { letterMode = e.target.value; updateShowLetters(); savePrefs(); });
 if (hoverMQ && hoverMQ.addEventListener) hoverMQ.addEventListener('change', updateShowLetters);
@@ -1518,7 +1534,7 @@ document.addEventListener('change', e => { if (e.target.matches && e.target.matc
   $('#foldHands').value = foldHands ? 'on' : 'off';
   $('#kbLayout').value = kbLayout;
   if (typeof prefs.sustainOn === 'boolean') sustainOn = prefs.sustainOn;
-  if (['fit', 'big'].includes(prefs.fitMode)) fitMode = prefs.fitMode;
+  if (['fit', 'big', 'o2', 'o3', 'o4', 'o5'].includes(prefs.fitMode)) fitMode = prefs.fitMode;
   else if (coarsePointer) fitMode = 'big'; // điện thoại: 88 phím quá nhỏ để chạm, mặc định giữ phím to
   $('#fitMode').value = fitMode;
   if (typeof prefs.autoScroll === 'boolean') autoScroll = prefs.autoScroll;
