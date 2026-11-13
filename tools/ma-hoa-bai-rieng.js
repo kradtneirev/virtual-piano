@@ -78,4 +78,9 @@ function readOld() {
   fs.writeFileSync(OUT, '// Bài riêng tư đã mã hóa (AES-256-GCM). Tạo bằng tools/ma-hoa-bai-rieng.js — đừng sửa tay.\n' +
     'window.PRIVATE_SONGS_ENC = ' + JSON.stringify(obj) + ';\n', 'utf8');
   console.log('Xong: ' + OUT + ' (' + Math.round(fs.statSync(OUT).size / 1024) + ' KB)');
+  // Đổi số phiên bản trong index.html để trình duyệt không dùng bản cũ đã lưu tạm.
+  const IDX = path.join(ROOT, 'index.html');
+  const html = fs.readFileSync(IDX, 'utf8');
+  const html2 = html.replace(/songs\.private\.enc\.js(\?v=\d+)?"/, 'songs.private.enc.js?v=' + Date.now() + '"');
+  if (html2 !== html) fs.writeFileSync(IDX, html2, 'utf8');
 })().catch(e => { console.error('LỖI: ' + e.message); process.exit(1); });
