@@ -31,6 +31,7 @@
   <nav class="tabs">
     <button class="tab" id="tabSongs"><span class="ic">🎼</span>BÀI HÁT</button>
     <button class="tab on" id="tabSustain" aria-pressed="true"><span class="ic">〰️</span>SUSTAIN</button>
+    <button class="tab" id="tabMetro" aria-pressed="false" title="Máy đếm nhịp (metronome)"><span class="ic">🥁</span>NHỊP</button>
     <button class="tab" id="tabNotepad"><span class="ic">📝</span>THÊM BÀI</button>
     <button class="tab" id="tabSettings"><span class="ic">⚙️</span>CÀI ĐẶT</button>
   </nav>
@@ -91,6 +92,20 @@
     <select id="instrument"></select>
   </label>
   <div class="field sliders-home" id="slidersHome"></div>
+  <div class="field">Máy đếm nhịp (nút 🥁 NHỊP)
+    <label>Tốc độ khi không phát bài: <output id="metroBpmOut">80</output> BPM
+      <input type="range" id="metroBpm" min="30" max="240" step="1" value="80"></label>
+    <label>Số phách mỗi ô nhịp
+      <select id="metroMeter">
+        <option value="1">1 (không nhấn phách đầu)</option>
+        <option value="2">2</option>
+        <option value="3">3</option>
+        <option value="4" selected>4</option>
+        <option value="6">6</option>
+      </select></label>
+    <label>Âm lượng tiếng gõ <input type="range" id="metroVol" min="0" max="1" step="0.05" value="0.6"></label>
+    <small class="dim">Khi đang phát bài, tiếng gõ tự khớp phách của bài (theo cả tốc độ đã chỉnh).</small>
+  </div>
   <label class="field">Cỡ đàn
     <select id="fitMode">
       <option value="fit">Vừa màn hình, không cuộn (Cả đàn: 88 phím · Hai tay / Gọn: phóng to quãng phím gõ được)</option>
@@ -203,7 +218,7 @@
 <script src="easy.js"></script>
 <script src="songs.js"></script>
 <script src="songs.private.js"></script>
-<script src="songs.private.enc.js?v=1794584996000"></script>
+<script src="songs.private.enc.js?v=1794586147770"></script>
 <script src="app.js"></script>
 </body>
 </html>

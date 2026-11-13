@@ -117,6 +117,8 @@
       // độ dài tối đa 64 phách (giới hạn của bộ đọc nốt)
       return { midi: n.midi, start: Math.round(a * 10000) / 10000, dur: Math.min(64, Math.max(0.05, Math.round((b - a) * 10000) / 10000)) };
     }).filter(function (n) { return n.midi >= 21 && n.midi <= 108; });
+    var before = ns.length;
+    ns = cleanNotes(ns, 60 / bpm);
     ns.sort(function (a, b) { return a.start - b.start || b.dur - a.dur || a.midi - b.midi; });
 
     // gom các nốt cùng lúc, cùng độ dài thành hợp âm
@@ -146,8 +148,50 @@
     var name = (base || m.names[0] || 'Bài từ MIDI').slice(0, 100);
     return {
       name: name, bpm: bpm, notation: lines.join('\n'),
-      noteCount: ns.length, tempoChanges: constant ? 0 : tempos.length - 1
+      noteCount: ns.length, removedNotes: before - ns.length, tempoChanges: constant ? 0 : tempos.length - 1
     };
+  }
+
+  /* Dọn nốt lặp thường gặp trong MIDI nhiều nhạc cụ (spb = giây mỗi phách):
+   * 1) Nhiều track/kênh đánh cùng một phím cùng lúc (lệch ≤ 30 ms) -> giữ một nốt (dài nhất).
+   * 2) Rung (tremolo): cùng phím đánh lại liên tục cực nhanh (nốt ≤ 60 ms, nghỉ ≤ 25 ms, từ 3 nốt) -> một nốt ngân.
+   *    Ngưỡng chặt để không gộp nhầm láy (trill) hay đoạn nốt lặp nhanh của bản piano thật.
+   * 3) Một nốt đang ngân mà bên trong có ≥ 3 nốt cùng phím (track khác đánh lặp liên tục) -> bỏ các nốt bên trong.
+   *    Ít hơn thì coi là đánh lại thật: giữ, chỉ cắt nốt đang ngân tại chỗ đánh lại. */
+  function cleanNotes(ns, spb) {
+    var SAME = 0.03 / spb, TREM_DUR = 0.06 / spb, TREM_GAP = 0.025 / spb;
+    var byKey = {}, out = [];
+    ns.forEach(function (n) { (byKey[n.midi] = byKey[n.midi] || []).push({ midi: n.midi, start: n.start, end: n.start + n.dur }); });
+    Object.keys(byKey).forEach(function (k) {
+      var a = byKey[k].sort(function (x, y) { return x.start - y.start || y.end - x.end; });
+      // 1) gộp nốt cùng lúc
+      var u = [];
+      a.forEach(function (n) {
+        var last = u.length ? u[u.length - 1] : null;
+        if (last && n.start - last.start <= SAME) last.end = Math.max(last.end, n.end);
+        else u.push({ midi: n.midi, start: n.start, end: n.end });
+      });
+      // 2) gộp chuỗi rung
+      var t = [];
+      for (var i = 0; i < u.length; i++) {
+        var j = i;
+        while (j + 1 < u.length && u[j].end - u[j].start <= TREM_DUR && u[j + 1].start - u[j].end <= TREM_GAP &&
+               u[j + 1].end - u[j + 1].start <= TREM_DUR) j++;
+        if (j - i >= 2) { t.push({ midi: u[i].midi, start: u[i].start, end: u[j].end }); i = j; }
+        else t.push(u[i]);
+      }
+      // 3) nốt nằm gọn trong nốt đang ngân
+      var keep = [];
+      for (i = 0; i < t.length; i++) {
+        var h = t[i], inner = [];
+        for (j = i + 1; j < t.length && t[j].start < h.end; j++) if (t[j].end <= h.end + SAME) inner.push(j); else break;
+        if (inner.length >= 3 && inner.length === j - i - 1) { keep.push(h); i = j - 1; continue; }
+        if (i + 1 < t.length && t[i + 1].start < h.end) h.end = t[i + 1].start; // đánh lại: cắt nốt trước
+        keep.push(h);
+      }
+      keep.forEach(function (n) { out.push({ midi: n.midi, start: Math.round(n.start * 10000) / 10000, dur: Math.min(64, Math.max(0.05, Math.round((n.end - n.start) * 10000) / 10000)) }); });
+    });
+    return out;
   }
 
   var api = { parseMidi: parseMidi, toSong: toSong };

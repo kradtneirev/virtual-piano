@@ -1192,7 +1192,7 @@ $('#midiInput').addEventListener('change', e => {
         return;
       }
       loadSong('user:' + rec.id);
-      toast('Đã nhập "' + s.name + '": ' + s.noteCount + ' nốt' + (s.tempoChanges ? ', có đổi tempo' : '') + '.');
+      toast('Đã nhập "' + s.name + '": ' + s.noteCount + ' nốt' + (s.removedNotes ? ' (đã bỏ ' + s.removedNotes + ' nốt lặp)' : '') + (s.tempoChanges ? ', có đổi tempo' : '') + '.');
     } catch (err) {
       toast('Không nhập được MIDI: ' + err.message);
     }
@@ -1310,7 +1310,8 @@ UNLOCK_EVENTS.forEach(ev => window.addEventListener(ev, unlockAudio, true));
 document.addEventListener('mouseup', e => { const b = e.target.closest && e.target.closest('button'); if (b) b.blur(); });
 
 let easyKey = 'keep'; // 'keep' = giữ nguyên giọng gốc, 'white' = dịch về phím trắng
-function savePrefs() { lsSet(PREF_KEY, { volume, labelMode, instrument, kbLayout, sustainOn, letterMode, easyKey, autoScroll, foldHands, fitMode }); }
+function savePrefs() { lsSet(PREF_KEY, { volume, labelMode, instrument, kbLayout, sustainOn, letterMode, easyKey, autoScroll, foldHands, fitMode,
+  metroBpm: metro.bpm, metroMeter: metro.meter, metroVol: metro.vol }); }
 $('#easyKey').addEventListener('change', e => { easyKey = e.target.value; savePrefs(); });
 $('#autoScroll').addEventListener('change', e => { autoScroll = e.target.value === 'on'; savePrefs(); });
 $('#fitMode').addEventListener('change', e => { fitMode = e.target.value; savePrefs(); layout(); });
@@ -1376,6 +1377,62 @@ function setSustain(on) {
   savePrefs();
 }
 $('#tabSustain').addEventListener('click', () => setSustain(!sustainOn));
+
+/* --- Máy đếm nhịp (metronome) ---
+   Đang tự phát bài: gõ đúng phách của bài (theo P.t0 và tốc độ). Ngoài ra: chạy tự do theo metro.bpm.
+   Lên lịch trước ~0,15 s bằng đồng hồ Web Audio nên không bị lệch khi trang bận. */
+const metro = { on: false, bpm: 80, meter: 4, vol: 0.6, timer: 0, out: null, mode: '', lastK: -1, next: 0, k: 0 };
+function metroClick(t, down) {
+  if (!metro.out) { metro.out = actx.createGain(); metro.out.connect(actx.destination); }
+  metro.out.gain.value = metro.vol;
+  const o = actx.createOscillator(), g = actx.createGain();
+  o.type = 'square';
+  o.frequency.value = down ? 1760 : 1175;
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(down ? 0.32 : 0.2, t + 0.002);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.05);
+  o.connect(g); g.connect(metro.out);
+  o.start(t); o.stop(t + 0.06);
+  const ms = Math.max(0, (t - actx.currentTime) * 1000), tab = $('#tabMetro');
+  setTimeout(() => { if (!metro.on) return; tab.classList.add('beat'); tab.classList.toggle('down', down);
+    setTimeout(() => tab.classList.remove('beat', 'down'), 110); }, ms);
+}
+function metroTick() {
+  if (!metro.on || !actx || actx.state !== 'running') return;
+  const now = actx.currentTime, hor = now + 0.15, M = Math.max(1, metro.meter);
+  if (P.playing && P.mode === 'auto' && P.parsed) {
+    const b = bps(), cur = (now - P.t0) * b;
+    if (metro.mode !== 'song' || metro.lastK > cur + 1) metro.lastK = Math.ceil(cur - 0.02) - 1; // mới vào / vừa tua lùi
+    metro.mode = 'song';
+    for (let k = Math.max(metro.lastK + 1, Math.ceil(cur - 0.02)); ; k++) {
+      const t = P.t0 + k / b;
+      if (t > hor) break;
+      if (k >= 0 && t >= now - 0.02) metroClick(Math.max(t, now), M > 1 && k % M === 0);
+      metro.lastK = k;
+    }
+  } else {
+    const s = 60 / metro.bpm;
+    if (metro.mode !== 'free' || metro.next < now - 0.2) { metro.mode = 'free'; metro.next = now + 0.06; metro.k = 0; }
+    while (metro.next < hor) { metroClick(metro.next, M > 1 && metro.k % M === 0); metro.k++; metro.next += s; }
+  }
+}
+function setMetro(on) {
+  metro.on = on;
+  $('#tabMetro').classList.toggle('on', on);
+  $('#tabMetro').setAttribute('aria-pressed', String(on));
+  clearInterval(metro.timer);
+  metro.mode = '';
+  if (on) { ensureAudio(); metro.timer = setInterval(metroTick, 25); metroTick(); }
+}
+$('#tabMetro').addEventListener('click', () => setMetro(!metro.on));
+$('#metroBpm').addEventListener('input', e => {
+  metro.bpm = clamp(+e.target.value || 80, 30, 240); $('#metroBpmOut').textContent = metro.bpm;
+  if (metro.mode === 'free') metro.mode = ''; // áp tốc độ mới ngay
+  savePrefs();
+});
+$('#metroMeter').addEventListener('change', e => { metro.meter = +e.target.value || 4; metro.k = 0; savePrefs(); });
+$('#metroVol').addEventListener('input', e => { metro.vol = clamp(+e.target.value, 0, 1); if (metro.out) metro.out.gain.value = metro.vol; savePrefs(); });
+
 function togglePanel(id) {
   const p = $('#' + id), open = p.hidden;
   $('#panelSongs').hidden = true; $('#panelSettings').hidden = true;
@@ -1460,6 +1517,11 @@ document.addEventListener('change', e => { if (e.target.matches && e.target.matc
   $('#letterMode').value = letterMode;
   updateShowLetters();
   $('#tabSustain').classList.toggle('on', sustainOn);
+  if (typeof prefs.metroBpm === 'number') metro.bpm = clamp(Math.round(prefs.metroBpm), 30, 240);
+  if ([1, 2, 3, 4, 6].includes(prefs.metroMeter)) metro.meter = prefs.metroMeter;
+  if (typeof prefs.metroVol === 'number') metro.vol = clamp(prefs.metroVol, 0, 1);
+  $('#metroBpm').value = metro.bpm; $('#metroBpmOut').textContent = metro.bpm;
+  $('#metroMeter').value = String(metro.meter); $('#metroVol').value = metro.vol;
   syncInstrumentUI();
   buildKeyboard();
   syncLayoutUI();
