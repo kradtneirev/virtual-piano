@@ -799,7 +799,8 @@ function loadSong(key) {
   buildPending();
   $('#npTitle').textContent = s.name;
   $('#npSub').textContent = s.artist || '';
-  $('#panelSongs').hidden = true;
+  closePanels();
+  $('#songbar').hidden = false;
   renderSongs();
   updateUI();
   // cuộn đàn tới quãng chứa giai điệu (trung vị các nốt)
@@ -814,8 +815,10 @@ function loadSong(key) {
 function unloadSong() {
   stop();
   P.songKey = null; P.rec = null; P.parsed = null;
-  $('#npTitle').textContent = 'Chưa chọn bài — bấm BÀI HÁT';
-  $('#npSub').textContent = 'Chơi bằng chuột, cảm ứng hoặc bàn phím máy tính.';
+  $('#npTitle').textContent = 'Chưa chọn bài';
+  $('#npSub').textContent = '';
+  $('#songbar').hidden = true;
+  if (!$('#panelPractice').hidden) closePanels();
   renderSongs();
   updateUI();
 }
@@ -1302,13 +1305,7 @@ function playLabel() {
   const s = !!(smallMQ && smallMQ.matches);
   return P.playing ? (s ? '⏸' : '⏸ Tạm dừng') : (s ? '▶' : '▶ Phát');
 }
-// màn nhỏ: chuyển thanh Tốc độ / Cao độ vào Cài đặt cho thanh điều khiển gọn
-function placeSliders() {
-  const s = $('#sliders'), home = $('#slidersHome');
-  if (smallMQ && smallMQ.matches) home.appendChild(s); else $('.tctl').appendChild(s);
-}
-placeSliders();
-if (smallMQ && smallMQ.addEventListener) smallMQ.addEventListener('change', () => { placeSliders(); updateUI(); });
+if (smallMQ && smallMQ.addEventListener) smallMQ.addEventListener('change', () => updateUI());
 // Safari/iOS chỉ cho phát âm thanh sau touchend/click: mở khóa ở lần chạm đầu tiên
 const UNLOCK_EVENTS = ['touchend', 'click', 'keydown', 'pointerup'];
 function unlockAudio() {
@@ -1373,6 +1370,8 @@ function syncInstrumentUI() {
   cur.textContent = '';
   const sm = document.createElement('small'); sm.textContent = String(i + 1).padStart(3, '0');
   cur.append(sm, nm(i));
+  if (!$('#soundList').children.length) renderSoundList();
+  document.querySelectorAll('#soundList button').forEach(b => b.classList.toggle('on', b.dataset.inst === instrument));
 }
 function stepInstrument(d) {
   const i = INSTRUMENTS.findIndex(x => x[0] === instrument);
@@ -1461,22 +1460,66 @@ $('#metroBpm').addEventListener('input', e => {
 $('#metroMeter').addEventListener('change', e => { metro.meter = +e.target.value || 4; metro.k = 0; savePrefs(); });
 $('#metroVol').addEventListener('input', e => { metro.vol = clamp(+e.target.value, 0, 1); if (metro.out) metro.out.gain.value = metro.vol; savePrefs(); });
 
+/* --- các bảng nổi: Bài hát / Tiếng đàn / Cài đặt (giữa màn hình, có nền mờ) và Luyện tập (nổi trên đàn, không che) --- */
+const PANELS = ['panelSongs', 'panelSounds', 'panelSettings', 'panelPractice'];
+const PANEL_TAB = { panelSongs: 'tabSongs', panelSounds: 'tabSounds', panelSettings: 'tabSettings', panelPractice: 'btnPractice' };
+function closePanels() {
+  PANELS.forEach(id => { $('#' + id).hidden = true; const t = $('#' + PANEL_TAB[id]); if (t) t.classList.remove('open'); });
+  $('#backdrop').hidden = true;
+}
 function togglePanel(id) {
   const p = $('#' + id), open = p.hidden;
-  $('#panelSongs').hidden = true; $('#panelSettings').hidden = true;
-  p.hidden = !open;
+  closePanels();
+  if (!open) return;
+  p.hidden = false;
+  $('#' + PANEL_TAB[id]).classList.add('open');
+  $('#backdrop').hidden = !p.classList.contains('modal');
+  if (p.classList.contains('pop')) p.style.top = Math.round($('#songbar').getBoundingClientRect().bottom + 6) + 'px';
+  if (id === 'panelSounds') { const c = $('#soundList .on'); if (c) c.scrollIntoView({ block: 'nearest' }); }
 }
 $('#tabSongs').addEventListener('click', () => togglePanel('panelSongs'));
+$('#tabSounds').addEventListener('click', () => togglePanel('panelSounds'));
 $('#tabSettings').addEventListener('click', () => togglePanel('panelSettings'));
-$('#tabNotepad').addEventListener('click', () => openDialog(null, false));
-document.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => { $('#' + b.dataset.close).hidden = true; }));
-$('#scroller').addEventListener('pointerdown', () => { $('#panelSongs').hidden = true; $('#panelSettings').hidden = true; });
-window.addEventListener('keydown', e => { if (e.key === 'Escape') { $('#panelSongs').hidden = true; $('#panelSettings').hidden = true; } });
+$('#btnPractice').addEventListener('click', () => togglePanel('panelPractice'));
+$('#tabNotepad').addEventListener('click', () => { closePanels(); openDialog(null, false); });
+document.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', closePanels));
+$('#backdrop').addEventListener('click', closePanels);
+$('#scroller').addEventListener('pointerdown', () => { if ($('#backdrop').hidden) closePanels(); });
+window.addEventListener('keydown', e => { if (e.key === 'Escape') closePanels(); });
+// tab con trong Cài đặt
+function showPane(id) {
+  document.querySelectorAll('#panelSettings .subtab').forEach(b => b.classList.toggle('on', b.dataset.pane === id));
+  document.querySelectorAll('#panelSettings .pane').forEach(p => { p.hidden = p.id !== id; });
+}
+document.querySelectorAll('#panelSettings .subtab').forEach(b => b.addEventListener('click', () => showPane(b.dataset.pane)));
+$('#btnMetroSet').addEventListener('click', () => { togglePanel('panelSettings'); showPane('paneMetro'); });
+// danh sách tiếng đàn: điều khiển đúng ô chọn #instrument (một nguồn trạng thái duy nhất)
+function renderSoundList() {
+  const box = $('#soundList'); box.textContent = '';
+  INSTRUMENTS.forEach(([id, name], i) => {
+    const b = document.createElement('button');
+    b.type = 'button'; b.dataset.inst = id;
+    const n = document.createElement('small'); n.textContent = String(i + 1).padStart(3, '0');
+    b.append(n, name);
+    b.classList.toggle('on', id === instrument);
+    b.addEventListener('click', () => {
+      const sel = $('#instrument'); sel.value = id; sel.dispatchEvent(new Event('change', { bubbles: true }));
+      closePanels();
+    });
+    box.appendChild(b);
+  });
+}
+// ô chọn đang giữ focus sẽ "ăn" phím chữ/mũi tên khi đang chơi bằng bàn phím: nhả focus sau khi chọn
+document.addEventListener('change', e => { if (e.target.tagName === 'SELECT') e.target.blur(); });
 // tính lại kích thước đàn mỗi khi vùng đàn đổi cỡ (đổi cửa sổ, tải xong font...)
 let layoutRaf = 0;
 const relayoutSoon = () => { cancelAnimationFrame(layoutRaf); layoutRaf = requestAnimationFrame(layout); };
 if (window.ResizeObserver) new ResizeObserver(relayoutSoon).observe($('#scroller'));
 window.addEventListener('resize', relayoutSoon);
+window.addEventListener('resize', () => { // xoay máy: đặt lại bảng Luyện tập ngay dưới thanh bài hát
+  const p = $('#panelPractice');
+  if (!p.hidden) p.style.top = Math.round($('#songbar').getBoundingClientRect().bottom + 6) + 'px';
+});
 window.addEventListener('load', relayoutSoon);
 
 function syncLayoutUI() {
